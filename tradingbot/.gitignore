@@ -1,0 +1,4 @@
+**/testing/*
+**/loggings/*
+*.pyc
+*.json
