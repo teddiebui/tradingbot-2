@@ -13,12 +13,9 @@ class TestBot(GenericTradingBot):
 
         self.oneTimeCrawler = None
         self.orderManager = None
-
-        if self.running == False:
-            self._initialize()
+            
 
     def _initialize(self):
-
         self.running = True
         #create one time crawler
         self.oneTimeCrawler = OneTimeCrawler.OneTimeCrawler(self.client)
@@ -27,25 +24,16 @@ class TestBot(GenericTradingBot):
 
     
     def _main(self):
-        ##trading bot start
-        self.running = True
-
-        
         ##TODO: write logic for bots
+        ##trading bot start
+        if self.running == False:
+            self.running = True
+            self._initialize()
+
         self.logic_1()
     
     def logic_1(self):
-
-        def _call_back(self):
-            self.futures_klines = self.oneTimeCrawler.get_klines(symbols=self.symbols)
-
-
-        self.symbols = self.oneTimeCrawler.get_all_futures_symbol_name()
-        self.futures_klines = self.oneTimeCrawler.get_klines(symbols=self.symbols, startTime = self.oneTimeCrawler._timestamp(30))
-        ##automated crawling
-        timer = self._next_15m_timer(lambda: self._call_back())
-        timer.start()
-        
+        pass
    
     
     
@@ -63,5 +51,4 @@ class TestBot(GenericTradingBot):
         
         
 if __name__ == "__main__":
-    t = TestBot()
-    c = OneTimeCrawler.OneTimeCrawler()
+    pass

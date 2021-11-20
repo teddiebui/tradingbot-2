@@ -20,8 +20,10 @@ class AbstractCrawler:
         # dt = dt.replace(second = 0, microsecond = 0, minute = dt.minute // 15 * 15, day = dt.day - start_day)
         # return str(int(dt.timestamp()*1000))
     
-    def klines_url(self,symbol, interval, startTime, limit):
-        url = self.host + "/api/v3/klines?symbol={}&interval={}&limit={}&startTime={}".format(symbol, "15m", limit, startTime)
+    def klines_url(self, symbol, startTime, inverval, limit):
+        url = self.host + "/api/v3/klines?symbol={}&interval={}&limit={}&startTime={}".format(symbol, "15m", limit, startTime * 1000)
+        print(url)
+        print("---------------", datetime.fromtimestamp(startTime))
         return url
     
 if __name__ == "__main__":
