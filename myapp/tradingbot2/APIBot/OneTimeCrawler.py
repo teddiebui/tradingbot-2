@@ -3,7 +3,7 @@ import requests
 import time
 import datetime
 import os
-import json
+import json as json
 from pprint import pprint
 class OneTimeCrawler(AbstractCrawler):
 
@@ -14,7 +14,7 @@ class OneTimeCrawler(AbstractCrawler):
         
         self.futures_symbols = []
         self.symbols = []
-        self.klines = {}
+        self.futures_klines = {}
         self.req = requests.Session()
         self.running = False
         self.START_TIME = int(time.time()) - (360 * 24 * 60 * 60) #360: days ago
@@ -59,39 +59,34 @@ class OneTimeCrawler(AbstractCrawler):
         return self.symbols
             
     
-    # def get_klines(self, startTime, symbols = None, interval = "15m", limit = 1000):
-        
-        # t = time.time()
-        # for symbol in symbols[:]:
-            # if not self.running:
-                # return None
-            # a=time.time()
-            # response = self._request_klines(symbol, interval, startTime, limit)
-            # if (response.status_code != 200):
-                # symbols.remove(symbol)
-                # print("error symbol:", symbol, response.status_code, response.text)
-                # continue
-            # self.klines[symbol] = self.build_klines_from_array(response.json())
-            # elapsed_time = time.time()-a
-            # print("{:.2f} - {:.2f}, symbol: {}, {}/{}".format(time.time()-t, elapsed_time, symbol, symbols.index(symbol)+1,len(symbols)))
-        # return self.klines
         
     def futures_get_klines(self):
-        #return: refined klines
-        #return type: json
-        if not self.klines:
-            self.klines = {}
+        if not self.futures_klines:
+            read = 0
+            update  = 0
+            refining = 0
+            self.futures_klines = {}
+            a=time.time()
             for symbol in self.futures_symbols:
+                b=time.time()
                 _klines = self._klines_from_file(symbol)
-                
-                #check klines up to date for each symbol
+                c=time.time()
+
                 while not self._klines_up_to_date(_klines):
-                    #update for all symbols until data is fresh
                     _klines = self._klines_update(_klines, symbol)
-                    
-                self.klines[symbol] = self._build_klines_from_array(_klines)
-            
-        return self.klines
+                    if not _klines:
+                        break
+                if not _klines:
+                    continue
+                d= time.time()
+                self.futures_klines[symbol] = self._build_klines_from_array(_klines)
+                e=time.time()
+                print("total: {:.2f}|read: {:.2f}|update: {:.2f}|refining: {:.2f}|len: {}| {}/{}".format(e-a,c-b,d-c,e-d,len(_klines), self.futures_symbols.index(symbol),len(self.futures_symbols)))
+                read += c-b
+                update += d-c
+                refining += e-d
+        print("total: {:.2f}|t-read: {:.2f}|t-update: {:.2f}|t-refining: {:.2f}|{}/{}".format(e-a,read, update, refining,self.futures_symbols.index(symbol),len(self.futures_symbols)))
+        return self.futures_klines
         
     def _klines_up_to_date(self, klines):
         if not klines:
@@ -111,39 +106,22 @@ class OneTimeCrawler(AbstractCrawler):
     
     def _klines_update(self, data, symbol):
         start_time = self.START_TIME if not data else self._klines_next_15m_timestamp(data)
-        self._klines_get_and_update(start_time, self.futures_symbols)
-        print("..updated all")
-        
-        kk = self._klines_from_file(symbol)
-        
-        print("_klines_update: datetime.datetime.fromtimestamp(int(kk[-1][0]/1000)), ", datetime.datetime.fromtimestamp(int(kk[-1][0]/1000)))
-        return kk
+        self._klines_get_and_update(start_time, symbol)
+        return self._klines_from_file(symbol)
     
-    def _klines_get_and_update(self, startTime, symbols, interval = "15m", limit = 1000):
-        print("_klines_get_and_update: ")
-        print("----len(symbols):", len(symbols))
-        t = time.time()
-        for symbol in symbols[:]:
-            if not self.running:
-                return None
-            a=time.time()
-            data = self._get_klines_from_api(startTime, symbol)
-            if not data:
-                symbols.remove(symbol)
-                continue
-                
-            self._klines_to_file(symbol, data)
-            print("{:.2f} - {:.2f}, symbol: {}, {}/{}".format(time.time()-t, time.time()-a, symbol, symbols.index(symbol)+1,len(symbols)))
-    
-            
-    def _get_klines_from_api(self, startTime, symbol, interval = "15m", limit = 1000):
-        # return: klines of symbol
-        # datatype: json
+    def _klines_get_and_update(self, startTime, symbol, interval = "15m", limit = 1000):
 
-        url = self.klines_url(symbol, startTime, interval, limit)
-        response = self.req.get(url)
-        if (response.status_code != 200):
-            print("error symbol:", symbol, response.status_code, response.text)
+        data = self._get_klines_from_api(startTime, symbol)
+        if data:
+            self._klines_to_file(symbol, data)
+        else:
+            self.futures_symbols.remove(symbol)
+
+    def _get_klines_from_api(self, startTime, symbol, interval = "15m", limit = 1000):
+
+        response = self.req.get(self.klines_url(symbol, startTime, interval, limit))
+        if response.status_code != 200:
+            print("{} eror: {}".format(symbol, response.content))
             return None
         return response.json()
  
@@ -155,7 +133,6 @@ class OneTimeCrawler(AbstractCrawler):
             if os.path.getsize(filename) == 0:
                 return None
             with open(filename, 'r') as f:
-            
                 data = json.load(f)
             return data
         except FileNotFoundError:
@@ -199,7 +176,7 @@ class OneTimeCrawler(AbstractCrawler):
     def _create_file_name(self, symbol):
         filename = "../jsondata/klines/" + symbol.upper() + ".json"
         filename = os.path.normpath(os.path.join(os.path.dirname(__file__), filename))
-        return filename;
+        return filename
             
     
     def _klines_next_15m_timestamp(self, klines):
