@@ -6,7 +6,7 @@ from pprint import pprint
 
 class TestBot(GenericTradingBot):
     def __init__(self, client):
-        super().__init__();
+        super().__init__()
         self.client = client
         self.symbols = []
         self.futures_klines = []
@@ -19,6 +19,7 @@ class TestBot(GenericTradingBot):
         self.running = True
         #create one time crawler
         self.oneTimeCrawler = OneTimeCrawler.OneTimeCrawler(self.client)
+        self.oneTimeCrawler.start()
         #create orderManager
         self.orderManager = OrderManager.OrderManager(self.client)
 
@@ -34,6 +35,7 @@ class TestBot(GenericTradingBot):
     
     def logic_1(self):
         pass
+            
    
     
     

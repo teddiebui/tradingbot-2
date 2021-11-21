@@ -22,8 +22,6 @@ class AbstractCrawler:
     
     def klines_url(self, symbol, startTime, inverval, limit):
         url = self.host + "/api/v3/klines?symbol={}&interval={}&limit={}&startTime={}".format(symbol, "15m", limit, startTime * 1000)
-        print(url)
-        print("---------------", datetime.fromtimestamp(startTime))
         return url
     
 if __name__ == "__main__":

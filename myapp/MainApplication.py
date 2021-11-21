@@ -20,8 +20,8 @@ import tradingbot2.TradingBot.TestBot as tb
 import tradingbot2.OrderManager.OrderManager as om
 
 class MainApplication:
-    def __init__(self,apiKey, apiSecret):
-        self.client = Client(apiKey, apiSecret)
+    def __init__(self):
+        self.client = Client("XJ3u04cEmn0CDTUamYRxv7e2hvqGESKswk1RJSCouHfyPc93fQBd4wplAIhXDUs6",  "Q5D1KVNcfom68qvGrBtLek2CMacZx71NjLzBsLxTqsxPYdaptzmiw3t7t23cR9hg")
         self.BOTS = []
         
     def run(self):
@@ -46,11 +46,12 @@ class MainApplication:
 if __name__ == "__main__":
     from datetime import datetime
 
-    apiKey = "XJ3u04cEmn0CDTUamYRxv7e2hvqGESKswk1RJSCouHfyPc93fQBd4wplAIhXDUs6"
-    apiSecret = "Q5D1KVNcfom68qvGrBtLek2CMacZx71NjLzBsLxTqsxPYdaptzmiw3t7t23cR9hg"
     
-    main = MainApplication(apiKey, apiSecret)
+    
+    main = MainApplication()
     main.run()
+
+
 
     # o = om.OrderManager(main.client)
     # order = o.futures_new_order_market("BNBUSDT")

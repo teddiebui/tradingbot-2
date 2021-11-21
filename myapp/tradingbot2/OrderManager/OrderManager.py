@@ -12,8 +12,6 @@ class OrderManager:
 
         self.leverage = 10
 
-    
-    
     def futures_create_order(self, symbol, amount):
         #amount in USDT
         #amount do not excess account's balance
@@ -143,8 +141,16 @@ class OrderManager:
                 break;
 
         
-        return float(usdt['balance']);
-
+        return float(usdt['balance'])
+    def get_baseAssetPrecision(self, symbol):
+        #TODO: return precision of the base asset
+        info = self.get_exchange_info(symbol)
+        return int(info['baseAssetPrecision'])
+    
+    def get_exchange_info(self, symbol):
+        #TODO: get exchangeinfo of symbol
+        return self.client.get_symbol_info('BNBBTC')
+    
     def get_quantity(self, price, amount):
         return amount/price * self.leverage
     
