@@ -4,11 +4,9 @@
   <head
   </head>
   <body>
-    <p>need to install these lib first</p> <br>
-    <br>
-
+    <p>need to install these lib first</p>
     pip install ta <br>
-    pip install requests <br>
+    pip install requests <br>  
     pip install python-binance <br>
   </body>
 
