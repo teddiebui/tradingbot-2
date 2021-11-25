@@ -6,9 +6,11 @@ import math
 
 class AbstractCrawler:
     def __init__(self):
+        super().__init__()
         self.host = "https://api.binance.com"
         self.req = requests.Session()
         self.timer = None
+        print("abstract crawler created")
         
     
     def _timestamp(self, start_day):
@@ -22,6 +24,7 @@ class AbstractCrawler:
     
     def klines_url(self, symbol, startTime, inverval, limit):
         url = self.host + "/api/v3/klines?symbol={}&interval={}&limit={}&startTime={}".format(symbol, "15m", limit, startTime * 1000)
+        # print(url)
         return url
     
 if __name__ == "__main__":

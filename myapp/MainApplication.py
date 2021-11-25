@@ -14,10 +14,12 @@ from binance.enums import *
 from binance.client import Client
 from binance.exceptions import BinanceAPIException, BinanceOrderException
 
-from tradingbot2.APIBot import OneTimeCrawler
+from tradingbot2.APIBot.OneTimeCrawler import OneTimeCrawler
+from tradingbot2.APIBot.WebSocketCrawler import WebSocketCrawler
+from tradingbot2.OrderManager.OrderManager import OrderManager
+from tradingbot2.Indicator.Indicator import OrderManager
 
 import tradingbot2.TradingBot.TestBot as tb
-import tradingbot2.OrderManager.OrderManager as om
 
 class MainApplication:
     def __init__(self):
@@ -29,7 +31,13 @@ class MainApplication:
             for each in self.BOTS:
                 each.start()
         else:
-            bot = tb.TestBot(self.client)
+            orderManager = OrderManager(self.client)
+            oneTimeCrawler = OneTimeCrawler(self.client)
+            indicator = Indicator
+
+            bot = tb.TestBot(self.client, orderManager, oneTimeCrawle, indicator)
+            bot.orderManager = orderManager
+            bot.oneTimeCrawler = oneTimeCrawler
             bot.symbol = "BNBUSDT"
             self.BOTS.append(bot)
 
@@ -44,27 +52,10 @@ class MainApplication:
 
 
 if __name__ == "__main__":
-    from datetime import datetime
 
     
     
     main = MainApplication()
     main.run()
-
-
-
-    # o = om.OrderManager(main.client)
-    # order = o.futures_new_order_market("BNBUSDT")
-    # orders = main.client.futures_get_all_orders()
-    # for each in orders:
-    #     print(datetime.fromtimestamp(int(each['updateTime'])/1000))
-
-    # order = o.futures_create_sl_order("BNBUSDT", 555.55, 0.1)
-
-    # price = o.futures_get_price("BNBUSDT")
-    # quantity = o.get_quantity(price, 100)
-    # pprint.pprint(quantity);
-
-
 
 
