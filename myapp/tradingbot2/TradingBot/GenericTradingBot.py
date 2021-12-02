@@ -24,17 +24,17 @@ class GenericTradingBot():
         self.thread.start()
         self.thread_count += 1
         self.running = True
-        self.timer = None
+        self.scheduler = None
 
-    def _timer(self, callback):
+    def _scheduler(self, callback, interval):
         
         remaining_time =  2
-        timer = threading.Timer(interval= remaining_time, function = self._timer_handler, args=(callback, 15*60))
-        timer.start()
+        scheduler = threading.Timer(interval= remaining_time, function = self._scheduler_handler, args=(callback, interval))
+        scheduler.start()
 
-        return timer
+        return scheduler
     
-    def _timer_handler(self, callback, interval):
+    def _scheduler_handler(self, callback, interval):
 
         try:
             print("now execution: ", math.floor(time.time()), " now: ", datetime.datetime.now())
@@ -49,15 +49,15 @@ class GenericTradingBot():
         remaining_time = future_time - time.time()
         print("next interval: {} - {}".format(remaining_time, datetime.datetime.fromtimestamp(future_time)))
 
-        timer = threading.Timer(interval = remaining_time, function = self._timer_handler, args=(callback, interval))
+        scheduler = threading.Timer(interval = remaining_time, function = self._scheduler_handler, args=(callback, interval))
         
-        timer.start()
+        scheduler.start()
 
         
     def stop(self):
         self.running = False
-        if self.timer:
-            self.timer.cancel()
+        if self.scheduler:
+            self.scheduler.cancel()
         
     def _main(self):
         
