@@ -23,7 +23,11 @@ class Indicator:
     def rsi(self, timeperiod=14):
         #ta.momentum.RSIIndicator(close: pandas.core.series.Series, window: int = 14, fillna: bool = False)
         return list(RSI(self.data, timeperiod, False).rsi())
-         
+    
+    def ma(self, timeperiod):
+        #ta.trend.ema_indicator(close, window=12, fillna=False)
+        return list(EMA(self.data, window=timeperiod).ema_indicator())
+
 
     def ema(self, timeperiod):
         #ta.trend.ema_indicator(close, window=12, fillna=False)

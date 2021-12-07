@@ -11,7 +11,13 @@ class Test:
     def __init__(self, client):
         self.indicator = Indicator.Indicator()
         self.client = client
-        self.test("BTCUSDT")
+        self.test_indicator("BTCUSDT")
+
+
+    def read_klines(self, symbol):
+        self.data = self.read(symbol)
+        self.kline_print(self.data)
+
 
     def test(self, symbol):
 
@@ -29,6 +35,8 @@ class Test:
                 print("{} - {}, indicator:{:.4f} - O:{} H:{} L:{} C:{} vol: {}".format(symbol, datetime.datetime.fromtimestamp(_15m[i]['time']), indicator[i], _15m[i]['open'], _15m[i]['high'], _15m[i]['low'], _15m[i]['close'], _15m[i]['volume']))
         print(len(_15m))
         print(len(price))
+
+
     def test_indicator(self, symbol):
         self.data = self.read(symbol)
         self.data = self._build_klines_from_array(self.data)
@@ -36,11 +44,16 @@ class Test:
 
 
         price =[i['close'] for i in _15m]
+        volume = [i['volume'] for i in _15m]
+
         self.indicator.set_data(price)
         indicator = self.indicator.rsi()
 
+        self.indicator.set_data(volume)
+        volume_ma = self.indicator.ma(14)
+
         for i in range(len(indicator)):
-            print("{} -indicator:{:.4f} - O:{} H:{} L:{} C:{} vol: {}".format(datetime.datetime.fromtimestamp(_15m[i]['time']), indicator[i], _15m[i]['open'], _15m[i]['high'], _15m[i]['low'], _15m[i]['close'], _15m[i]['volume'] ))
+            print("{} -indicator:{:.4f} - O:{} H:{} L:{} C:{} vol: {}".format(datetime.datetime.fromtimestamp(_15m[i]['time']), volume_ma[i], _15m[i]['open'], _15m[i]['high'], _15m[i]['low'], _15m[i]['close'], _15m[i]['volume'] ))
     
     def plot(self):
         df = pd.read_csv('https://raw.githubusercontent.com/plotly/datasets/master/finance-charts-apple.csv')

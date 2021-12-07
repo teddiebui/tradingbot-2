@@ -21,16 +21,16 @@ class OneTimeCrawler(AbstractCrawler):
         self.lock = threading.Lock()
 
 
-        
-        self.START_TIME = int(time.time()) - (360 * 24 * 60 * 60) #360: days ago in timestamp
+        self.MAX_THRESH_HOLD = 1000
+        self.START_TIME = self._kline_get_endTime() - (15*60) * self.MAX_THRESH_HOLD #15: days ago in timestamp
         self.FUTURES_SYMBOLS = []
         self.SYMBOLS = []
         self.KLINES = {}
-        self.STABLE_COINS = set(["AUD", "BIDR", "BRL", "EUR", "GBP", "RUB", "TRY", "TUSD", "USDC", "DAI", "IDRT", "UAH", "NGN", "VAI", "USDP", "USDSB"])
-        self.MAX_THRESH_HOLD = 2880
+        self.STABLE_COINS = set(["AUD", "BIDR", "BRL", "EUR", "GBP", "RUB", "TRY", "TUSD", "USDC", "DAI", "IDRT", "UAH", "NGN", "VAI", "USDP", "USDS"])
+        
 
 
-    def get_futures_symbols(self):
+    def futures_get_symbols(self):
     
         if len(self.FUTURES_SYMBOLS) == 0:
             symbols = set(self.SYMBOLS)
@@ -85,7 +85,6 @@ class OneTimeCrawler(AbstractCrawler):
                     startTime = int(_klines['time'])
                     # print("startTime: ", startTime)
                 except KeyError:
-                    
                     _klines = self._klines_from_file(symbol)
                     startTime = self.START_TIME if not _klines else self._kline_get_timestamp(_klines[-1])
                 except IndexError:
@@ -101,6 +100,9 @@ class OneTimeCrawler(AbstractCrawler):
                 try:              
                     self._build_klines_from_array(data, klines = self.KLINES[symbol])
                 except KeyError:
+                    temp = _klines + data
+                    if not temp or not self._klines_up_to_date(self._kline_get_timestamp(temp[-1])):
+                        continue
                     self.KLINES[symbol] = self._build_klines_from_array(_klines + data)
                 e = time.time()
                 #debug
@@ -134,8 +136,8 @@ class OneTimeCrawler(AbstractCrawler):
         data = response.json()
 
         if not data: 
-            print("{} STOPPED TRADING ON BINANCE, REMOVE FROM LIST NOW".format(symbol.replace("USDT", "/USDT")))
-            self.SYMBOLS.remove(symbol)
+            # print("{} STOPPED TRADING ON BINANCE, REMOVE FROM LIST NOW".format(symbol.replace("USDT", "/USDT")))
+            # self.SYMBOLS.remove(symbol)
             return []
         return data 
     
@@ -210,85 +212,7 @@ class OneTimeCrawler(AbstractCrawler):
         return filename
             
 
-    def _build_klines_from_array(self, data, klines = None):
-
-        candle_15m = klines['15m'] if klines else []
-        candle_1h = klines['1h'] if klines else []
-        candle_4h = klines['4h'] if klines else []
-        candle_1d = klines['1d'] if klines else []
-        candle_1w = klines['1w'] if klines else []
-
-        if len(data) > 0:
-            for i in data[-self.MAX_THRESH_HOLD:]:
-                
-                t = datetime.datetime.fromtimestamp(i[0]/1000)
-                
-                candle = {'time': int(float(i[0])/1000),
-                    'open' : float(i[1]), 
-                    'high' : float(i[2]), 
-                    'low' : float(i[3]), 
-                    'close' : float(i[4]),
-                    'volume': float(i[5]),
-                    'closeTime': float(i[6]),
-                    'quoteVolume': float(i[7]),
-                    'trades': int(i[8]),
-                    'buyVolume' : float(i[9]),
-                    'buyQuoteVolume': float(i[10])
-                    }
-                    
-                #15m
-                candle_15m.append(candle.copy())
-                while len(candle_15m) >= self.MAX_THRESH_HOLD:
-                    del candle_15m[0]
-            
-                #1h
-                if t.minute == 0:
-                    candle_1h.append(candle.copy())
-                else:
-                    if len(candle_1h) > 0:
-                        self._build_merge_candle(candle, candle_1h[-1])
-                while len(candle_1h) >= self.MAX_THRESH_HOLD:
-                    del candle_1h[0]
-                #4h
-                if t.minute == 0 and t.hour % 4 == 0:
-                    candle_4h.append(candle.copy())
-                else:
-                    if len(candle_4h) > 0:
-                        self._build_merge_candle(candle, candle_4h[-1])
-                while len(candle_4h) >= self.MAX_THRESH_HOLD:
-                    del candle_4h[0]
-
-                #1d
-                if t.minute == 0 and t.hour == 8:
-                    candle_1d.append(candle.copy())
-                else:
-                    if len(candle_1d) > 0:
-                        self._build_merge_candle(candle, candle_1d[-1])
-                while len(candle_1d) >= self.MAX_THRESH_HOLD:
-                    del candle_1d[0]
-
-                #1w
-                if t.minute == 0 and t.hour == 8 and (t.timestamp()/60/60/24) % 7 == 4:
-                    candle_1w.append(candle.copy())
-                else:
-                    if len(candle_1w) > 0:
-                        self._build_merge_candle(candle, candle_1w[-1])
-                
-                while len(candle_1w) >= self.MAX_THRESH_HOLD:
-                    del candle_1w[0]
-
-        return {"15m": candle_15m, "1h" : candle_1h, "4h" : candle_4h, "1d": candle_1d, "1w": candle_1w}
-    
-    def _build_merge_candle(self, candle, merging_candle):
-
-        merging_candle['high'] = candle['high'] if candle['high'] > merging_candle['high'] else merging_candle['high']
-        merging_candle['low'] = candle['low'] if candle['low'] < merging_candle['low'] else merging_candle['low']
-        merging_candle['close'] = candle['close']
-        merging_candle['volume'] +=  candle['volume']
-        merging_candle['quoteVolume'] += candle['quoteVolume']
-        merging_candle['trades'] += candle['trades']
-        merging_candle['buyVolume'] += candle['buyVolume']
-        merging_candle['buyQuoteVolume'] += candle['buyQuoteVolume']  
+      
 
 
 

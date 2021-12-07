@@ -14,49 +14,54 @@ class WebSocketCrawler(GenericTradingBot):
         self.host = "wss://stream.binance.com:9443/ws/"
         self.WS = [
             self.host + "!ticker@arr",
-            self.host + "@ticker"
+            self.host + "@ticker",
+            self.host + "!miniTicker@arr"
         ]
         self.running = False
         self.active_ws = None
-        self.active_url = None
+        self.active_url = self.WS[2]
+        self.callback = None
 
         print("hi im web socket crawler")
               
     
     def _main(self):
         
-        def on_message(ws, message):
-            dataJson = json.loads(message)
-            
-            dataJson[0]['E'] = datetime.fromtimestamp(int(dataJson[0]['E'])/1000)
-            dataJson[0]['C'] = datetime.fromtimestamp(int(dataJson[0]['C'])/1000)
-            dataJson[0]['O'] = datetime.fromtimestamp(int(dataJson[0]['O'])/1000)
-            pprint("dataJson[0]")
-            # print(self.active_url)
-
-        def on_error(ws, error):
-            print(error)
-
-        def on_close(ws, close_status_code, close_msg):
-            print("### closed ###")
-            
-        def on_open(ws):
-            print("web socket open")
-        
         # websocket.enableTrace(True)
         self.active_ws = websocket.WebSocketApp(self.active_url,
-                              on_open=on_open,
-                              on_message=on_message,
-                              on_error=on_error,
-                              on_close=on_close)
+                            on_open = lambda ws: self.on_open(ws),
+                            on_message = lambda ws, message: self.on_message(ws, message),
+                            on_error = lambda ws, error: self.on_error(ws, error),
+                            on_close = lambda ws: self.on_close(ws))
         self.active_ws.run_forever()
-        self.running = True
+
+    def on_message(self, ws, message):
+
+            
+            callback = self.callback
+            if not callback:
+                print("WEBSOCKET ERROR: callback is not set")
+                self.stop()
+                return
+            callback(ws, message)
+
+            # print(self.active_url)
+
+    def on_error(self, ws, error):
+        print("ERROR", error)
+
+    def on_close(self, ws):
+        print("### closed ###")
+        
+    def on_open(self, ws):
+            print("web socket open")
         
         
     def stop(self):
-        self.running = False
-        self.active_ws.keep_running = False
-        print("web socket closed")
+        if self.running:
+            self.running = False
+            self.active_ws.keep_running = False
+            print("web socket closed")
         
 
 

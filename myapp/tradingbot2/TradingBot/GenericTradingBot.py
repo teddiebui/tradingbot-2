@@ -26,38 +26,11 @@ class GenericTradingBot():
         self.running = True
         self.scheduler = None
 
-    def _scheduler(self, callback, interval):
-        
-        remaining_time =  2
-        scheduler = threading.Timer(interval= remaining_time, function = self._scheduler_handler, args=(callback, interval))
-        scheduler.start()
-
-        return scheduler
     
-    def _scheduler_handler(self, callback, interval):
-
-        try:
-            print("now execution: ", math.floor(time.time()), " now: ", datetime.datetime.now())
-            callback()
-        except Exception as e:
-            raise e
-        
-
-        dt = datetime.datetime.now()
-        dt = dt.replace(second = 0, microsecond = 0, minute = dt.minute // 15 * 15)
-        future_time = math.floor(dt.timestamp()) + interval + self.buffered
-        remaining_time = future_time - time.time()
-        print("next interval: {} - {}".format(remaining_time, datetime.datetime.fromtimestamp(future_time)))
-
-        scheduler = threading.Timer(interval = remaining_time, function = self._scheduler_handler, args=(callback, interval))
-        
-        scheduler.start()
 
         
     def stop(self):
         self.running = False
-        if self.scheduler:
-            self.scheduler.cancel()
         
     def _main(self):
         

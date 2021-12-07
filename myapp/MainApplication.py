@@ -8,6 +8,7 @@ import pprint
 import os
 import sys
 import requests
+import time
 
 
 from binance.enums import *
@@ -46,6 +47,14 @@ class MainApplication:
             # back_test_bot = btb.BackTestBot(self.client, oneTimeCrawler, orderManager, indicator)
             # back_test_bot.start()
         
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt as e:
+            print(e)
+            print("Stop")
+            self.stop()
+        
     def stop(self):
         for each in self.BOTS:
             each.stop()
@@ -56,5 +65,8 @@ if __name__ == "__main__":
     
     main = MainApplication()
     main.run()
+
+    # a = WebSocketCrawler()
+    # a.start()
 
 
