@@ -11,7 +11,7 @@ class Test:
     def __init__(self, client):
         self.indicator = Indicator.Indicator()
         self.client = client
-        self.test_indicator("BTCUSDT")
+        self.read_klines("BTCUSDT")
 
 
     def read_klines(self, symbol):

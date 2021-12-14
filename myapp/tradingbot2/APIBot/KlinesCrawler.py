@@ -1,15 +1,14 @@
-from ..APIBot.AbstractCrawler import AbstractCrawler
-from ..TradingBot.GenericTradingBot import GenericTradingBot
-
-
 import requests
 import time
 import datetime
 import os
 import json as json
 import threading
+import math
+
 from pprint import pprint
-class OneTimeCrawler(AbstractCrawler):
+
+class KlinesCrawler():
 
     def __init__(self, client):
         # AbstractCrawler.__init__(self)
@@ -19,14 +18,18 @@ class OneTimeCrawler(AbstractCrawler):
         self.client = client
         self.ws = None
         self.lock = threading.Lock()
+        self.host = "https://api.binance.com"
+        self.req = requests.Session()
 
 
         self.MAX_THRESH_HOLD = 1000
-        self.START_TIME = self._kline_get_endTime() - (15*60) * self.MAX_THRESH_HOLD #15: days ago in timestamp
+        self.START_TIME = self._kline_get_endTime() - (15*60) * self.MAX_THRESH_HOLD #365 days ago in timestamp
         self.FUTURES_SYMBOLS = []
         self.SYMBOLS = []
         self.KLINES = {}
+        self.KLINES_MEMORY = {}
         self.STABLE_COINS = set(["AUD", "BIDR", "BRL", "EUR", "GBP", "RUB", "TRY", "TUSD", "USDC", "DAI", "IDRT", "UAH", "NGN", "VAI", "USDP", "USDS"])
+        self.file = __file__
         
 
 
@@ -47,7 +50,6 @@ class OneTimeCrawler(AbstractCrawler):
         
         if len(self.SYMBOLS) == 0:
             prices = self.client.get_all_tickers()
-            
             for each in prices:
                 symbol = each['symbol']
                 
@@ -61,55 +63,52 @@ class OneTimeCrawler(AbstractCrawler):
                     self.SYMBOLS.append(symbol)
         return self.SYMBOLS
 
-
-    def get_klines(self):
-
-        #try to update klines before returning it
-        if not self.KLINES:
-            self.klines_update()
-        return self.KLINES
-    
     def klines_update(self):
         #using Thread.Lock
         with self.lock:
-            symbols = self.get_symbols()[:]
+            symbols = self.get_symbols()
             total = 0 #timestamp
             for symbol in symbols:
                 
                 #step 1: get last timestamp to check up to date 
                 a = time.time()
-
                 try:
                     #read timestamp from memory
-                    _klines = self.KLINES[symbol]['15m'][-1]
-                    startTime = int(_klines['time'])
-                    # print("startTime: ", startTime)
+                    latest_klines = self.KLINES_MEMORY[symbol][-1]
                 except KeyError:
-                    _klines = self._klines_from_file(symbol)
-                    startTime = self.START_TIME if not _klines else self._kline_get_timestamp(_klines[-1])
-                except IndexError:
-                    startTime = self.START_TIME
+                    #read klines from storage
+                    self.KLINES_MEMORY[symbol] = self._klines_from_file(symbol)
+                    if self.KLINES_MEMORY[symbol]:
+                        latest_klines = self.KLINES_MEMORY[symbol][-1]
+                        startTime = self._kline_get_timestamp(latest_klines)
+                    else:
+                        #start over if no klines in storage
+                        startTime = self.START_TIME
                 b = time.time()
-                #step 2: force for update until up to date, return empty list if up to date
-                data = self._kline_update(symbol, startTime)
-                c = time.time()
-                #step 3: append klines to json file
-                self._klines_to_file(symbol, data)
-                d = time.time()
-                #stemp 4: refine the klines and load into memory
-                try:              
-                    self._build_klines_from_array(data, klines = self.KLINES[symbol])
-                except KeyError:
-                    temp = _klines + data
-                    if not temp or not self._klines_up_to_date(self._kline_get_timestamp(temp[-1])):
-                        continue
-                    self.KLINES[symbol] = self._build_klines_from_array(_klines + data)
-                e = time.time()
-                #debug
 
-                print("total: {:.2f}|read: {:.2f}|update: {:.2f}|append: {:.2f}|refine: {:.2f} - {} - {}/{}".format(
-                    e-a, b-a, c-b, d-c, e-d, symbol.replace("USDT", "/USDT"), symbols.index(symbol) + 1, len(self.SYMBOLS)
-                ))
+
+
+                #step 2: update if not up to date
+                if startTime == self.START_TIME or not self._klines_up_to_date(latest_klines[0]/1000):
+                    data = self._kline_update(symbol, startTime)
+                    if not data:
+                        symbols.remove(symbol)
+                        print("symbol %s is delisted, remove from list now..." % (symbol))
+                        continue
+
+                    c = time.time()
+                    #step 3: append klines to json file
+                    self._klines_to_file(symbol, data)
+                    d = time.time()
+
+                
+                    #step 4: save to memory
+                    self.KLINES_MEMORY[symbol] = data
+
+
+                    print("total: {:.2f}|read: {:.2f}|update: {:.2f}|append: {:.2f} - {} - {}/{}".format(
+                        d-a, b-a, c-b, d-c, symbol.replace("USDT", "/USDT"), symbols.index(symbol) + 1, len(self.SYMBOLS)
+                    ))
             print("done updating")
 
         
@@ -135,10 +134,10 @@ class OneTimeCrawler(AbstractCrawler):
         
         data = response.json()
 
-        if not data: 
+        # if not data: 
             # print("{} STOPPED TRADING ON BINANCE, REMOVE FROM LIST NOW".format(symbol.replace("USDT", "/USDT")))
             # self.SYMBOLS.remove(symbol)
-            return []
+            # return []
         return data 
     
     def _klines_up_to_date(self, startTime):
@@ -208,18 +207,68 @@ class OneTimeCrawler(AbstractCrawler):
             
     def _create_file_name(self, symbol):
         filename = "../jsondata/klines/" + symbol.upper() + ".json"
-        filename = os.path.normpath(os.path.join(os.path.dirname(__file__), filename))
+        filename = os.path.normpath(os.path.join(os.path.dirname(self.file), filename))
         return filename
-            
 
-      
+    
+    def _timestamp(self, start_day):
+        dt = datetime.now()
+        t = (math.floor(time.time()) - start_day * 24 * 60 * 60)
+        if start_day == 0:
+            t = t - 15*60
+        return t * 1000
+        # dt = dt.replace(second = 0, microsecond = 0, minute = dt.minute // 15 * 15, day = dt.day - start_day)
+        # return str(int(dt.timestamp()*1000))
+    
+    def klines_url(self, symbol, startTime, endTime, inverval, limit):
+        url = self.host + "/api/v3/klines?symbol={}&interval={}&limit={}&startTime={}&endTime={}".format(symbol, "15m", limit, startTime * 1000, endTime * 1000)
+        # print(url)
+        return url
+                      
 
+    def _scheduler(self, callback, interval):
+        
+        remaining_time =  2
+        self.scheduler = threading.Timer(interval= remaining_time, function = self._scheduler_handler, args=(callback, interval))
+        self.scheduler.start()
 
+        return self.scheduler
+    
+    def _scheduler_handler(self, callback, interval):
 
-            
+        try:
+            print("now execution: ", math.floor(time.time()), " now: ", datetime.datetime.now())
+            callback()
+        except Exception as e:
+            raise e
+        
+
+        dt = datetime.datetime.now()
+        dt = dt.replace(second = 0, microsecond = 0, minute = dt.minute // 15 * 15)
+        future_time = math.floor(dt.timestamp()) + interval + 2
+        remaining_time = future_time - time.time()
+        print("next interval: {} - {}".format(remaining_time, datetime.datetime.fromtimestamp(future_time)))
+
+        self.scheduler = threading.Timer(interval = remaining_time, function = self._scheduler_handler, args=(callback, interval))
+        self.scheduler.start()
+
     def stop(self):
         self.running = False
+        if self.scheduler:
+            self.scheduler.cancel()
         print("OneTimeCrawler stopped")
+
+if __name__ == "__main__":
+    from binance.enums import *
+    from binance.client import Client
+    from binance.exceptions import BinanceAPIException, BinanceOrderException
+
+    client = Client("XJ3u04cEmn0CDTUamYRxv7e2hvqGESKswk1RJSCouHfyPc93fQBd4wplAIhXDUs6",  "Q5D1KVNcfom68qvGrBtLek2CMacZx71NjLzBsLxTqsxPYdaptzmiw3t7t23cR9hg")
+
+    a = KlinesCrawler(client)
+    # a.klines_update()
+    
+    scheduler = a._scheduler(a.klines_update, 15*60)
 
 
         

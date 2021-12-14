@@ -15,7 +15,7 @@ from binance.enums import *
 from binance.client import Client
 from binance.exceptions import BinanceAPIException, BinanceOrderException
 
-from tradingbot2.APIBot.OneTimeCrawler import OneTimeCrawler
+from tradingbot2.APIBot.KlinesCrawler import KlinesCrawler
 from tradingbot2.APIBot.WebSocketCrawler import WebSocketCrawler
 from tradingbot2.OrderManager.OrderManager import OrderManager
 from tradingbot2.Indicator.Indicator import Indicator
@@ -34,10 +34,10 @@ class MainApplication:
                 each.start()
         else:
             orderManager = OrderManager(self.client)
-            oneTimeCrawler = OneTimeCrawler(self.client)
+            klinesCrawler = KlinesCrawler(self.client)
             indicator = Indicator()
 
-            bot = tb.TestBot(self.client, oneTimeCrawler, orderManager, indicator)
+            bot = tb.TestBot(self.client, klinesCrawler, orderManager, indicator)
 
             self.BOTS.append(bot)
             bot.start()

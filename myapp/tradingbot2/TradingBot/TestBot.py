@@ -1,24 +1,22 @@
 # from myapp.tradingbot2.APIBot import OneTimeCrawler
 import json
-from ..APIBot.WebSocketCrawler import WebSocketCrawler
-from ..TradingBot.GenericTradingBot import GenericTradingBot
-from ..APIBot import OneTimeCrawler
-from ..OrderManager import OrderManager
 import threading
 import datetime
 import math
 import time
 import pprint
 import requests
+
 from collections import defaultdict, deque
+
+from ..APIBot.WebSocketCrawler import WebSocketCrawler
+from ..TradingBot.GenericTradingBot import GenericTradingBot
 
 
 class TestBot(GenericTradingBot):
     def __init__(self, client, oneTimeCrawler = None, orderManager = None, indicator = None):
         super().__init__()
         self.client = client
-        self.symbols = []
-        self.futures_klines = []
 
         self.oneTimeCrawler = oneTimeCrawler
         self.orderManager = orderManager
@@ -30,6 +28,9 @@ class TestBot(GenericTradingBot):
         self.DESTRUCTURED_KLINES = {}
         self.KLINES = {}
         self.WATCH_LIST = []
+
+        self.symbols = []
+        self.futures_klines = []
 
     def _main(self):
         ##TODO: write logic for bots
@@ -60,28 +61,21 @@ class TestBot(GenericTradingBot):
                     # }
                     
                     time = round(ticker['E']/1000)
-                    
-                    
-
                     kline = self.KLINES[symbol]['15m'][-1]
-                    pprint.pprint(kline)
 
                     kline['close'] = float(ticker['c'])
                     kline['high'] = float(ticker['c']) if float(ticker['c']) > kline['high'] else kline['high']
                     kline['low'] = float(ticker['c']) if float(ticker['c']) < kline['low'] else kline['low']
 
-            
-                print(self.WATCH_LIST)
-                pprint.pprint(kline)
+        
             self.count += 1
-            if self.count > 2:
+            if self.count > 3:
                 self.count = 0
             
 
         self.symbols = self.oneTimeCrawler.get_symbols()
-        futures_symbols = self.oneTimeCrawler.get_symbols()
+        self.futures_symbols = self.oneTimeCrawler.get_symbols()
         self.MAX_THRESH_HOLD = self.oneTimeCrawler.MAX_THRESH_HOLD
-        
         self.webSocketCrawler.callback = lambda ws, msg: _callback(self, ws, msg)
         
 
@@ -126,8 +120,6 @@ class TestBot(GenericTradingBot):
 
             
             print("total: {:.2f}|download: {:.2f}|refine: {:.2f}|destructure: {:.2f}| {}/{} {}".format(time.time() - total, a-total, b-a, c-b, self.symbols.index(symbol)+1, len(self.symbols), symbol.replace("USDT", "/USDT")))
-
-            break
 
         ##START WEBSOCKET
         # INSIDE WEBSOCKET ON_MESSAGE WILL RUN INDICATORSs
