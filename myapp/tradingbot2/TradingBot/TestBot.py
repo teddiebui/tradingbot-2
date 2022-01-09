@@ -6,6 +6,7 @@ import math
 import time
 import pprint
 import requests
+import traceback
 
 from collections import defaultdict, deque
 
@@ -41,40 +42,87 @@ class TestBot(GenericTradingBot):
         def _callback(self, ws, msg):
             data = json.loads(msg)
 
+            spot = {}
+            futures = {}
+            rsi={}
             
-            if self.count == 0:
-                for ticker in data:
-                    symbol = ticker['s']
-                    if not symbol in self.KLINES.keys():
-                        continue
-                    #DATA: 
-                    # {
-                    #     "e": "24hrMiniTicker",  // Event type
-                    #     "E": 123456789,         // Event time
-                    #     "s": "BNBBTC",          // Symbol
-                    #     "c": "0.0025",          // Close price
-                    #     "o": "0.0010",          // Open price
-                    #     "h": "0.0025",          // High price
-                    #     "l": "0.0010",          // Low price
-                    #     "v": "10000",           // Total traded base asset volume
-                    #     "q": "18"               // Total traded quote asset volume
-                    # }
-                    
-                    time = round(ticker['E']/1000)
-                    kline = self.KLINES[symbol]['15m'][-1]
+            try:
+                if self.count == 0:
+                    for ticker in data:
+                        symbol = ticker['s']
+                        if not symbol in self.KLINES.keys():
+                            continue
 
-                    kline['close'] = float(ticker['c'])
-                    kline['high'] = float(ticker['c']) if float(ticker['c']) > kline['high'] else kline['high']
-                    kline['low'] = float(ticker['c']) if float(ticker['c']) < kline['low'] else kline['low']
+                        candle = {
+                            'time': ticker['e'],
+                            'open': float(ticker['o']),
+                            'high': float(ticker['h']),
+                            'low': float(ticker['l']),
+                            'close': float(ticker['c']),
+                            'volume': 0
+                        }
+                        for k,v in self.KLINES[symbol].items():
+                            last_candle = v[-1]
+                            ##variable initiation
+                            if k not in spot.keys():
+                                spot[k] = {}
+                            if k not in futures.keys(): 
+                                futures[k] = {}
+                            if k not in rsi.keys(): 
+                                rsi[k] = {}
 
-        
-            self.count += 1
-            if self.count > 3:
-                self.count = 0
-            
+                            ##merging BUG: need to fix
+                            self._merge_candle(candle.copy(), last_candle)   
+
+                            ##check change
+                            change = round(last_candle['close']/last_candle['open']*100 - 100, 2)
+                            if change >= 5:
+                                spot[k][symbol]=change
+                                if symbol in self.futures_symbols:
+                                    futures[k][symbol] = change
+
+                            ##check rsi
+                            self.indicator.set_data([i['close'] for i in v])
+                            rsi_list = self.indicator.rsi()
+                            if rsi_list[-1]<30:
+                                rsi[k][symbol]=rsi_list[-1]
+                                if symbol in self.futures_symbols:
+                                    rsi[k][symbol] = rsi_list[-1]
+                        #UPDATE CURRENT FUTURES ORDER
+                        self.orderManager.futures_update_order(symbol, candle['close'])
+
+                        ##GENERATE FUTURES SIGNAL
+                        signal = symbol in futures['15m'] and symbol in futures['1h'] and symbol in futures['4h']
+                        signal = symbol in futures['1h'] and symbol in futures['4h']
+                            
+                        #PLACE FUTURES ORDER
+                        if signal == True:
+                            order = self.orderManager.futures_create_order(symbol, candle['close'])
+                            if order != None:
+                                print("Place futures order " + symbol + "successfully")
+
+                        
+                        #UPDATE CURRENT ORDER
+                        self.orderManager.update_order(symbol, candle['close'])
+
+                        ##GENERATE FUTURES SIGNAL
+                        signal = symbol in spot['15m'] and symbol in spot['1h'] and symbol in spot['4h']
+                            
+                        #PLACE ORDER
+                        if signal == True:
+                            order = self.orderManager.create_order(symbol, 12)
+                            if order != None:
+                                print("Place order " + symbol + "successfully")
+                self.count += 1
+                if self.count > 3:
+                    self.count = 0
+            except Exception as e:
+                traceback.print_exc()
+                print(symbol)
+                self.stop()
 
         self.symbols = self.oneTimeCrawler.get_symbols()
-        self.futures_symbols = self.oneTimeCrawler.get_symbols()
+        self.futures_symbols = self.oneTimeCrawler.futures_get_symbols()
         self.MAX_THRESH_HOLD = self.oneTimeCrawler.MAX_THRESH_HOLD
         self.webSocketCrawler.callback = lambda ws, msg: _callback(self, ws, msg)
         
@@ -85,24 +133,19 @@ class TestBot(GenericTradingBot):
     def scenario_02_callback(self):
         self.count = 0
         req = requests.Session()
-        
         #END PREVIOUS WEBSOCKET
         if self.webSocketCrawler.running:
             self.webSocketCrawler.stop()
-        
 
         for symbol in self.symbols:
             total=time.time()
             #step 1: crawl api
-            # data = self.oneTimeCrawler._kline_update(symbol, self.oneTimeCrawler.START_TIME)
-            # if not data or not self.oneTimeCrawler._klines_up_to_date(self.oneTimeCrawler._kline_get_timestamp(data[-1])): #symbol has no latest trading, maybe it has been delisted
-            #     self.symbols.remove(symbol)
-            #     continue
             url = "https://api.binance.com/api/v3/klines?symbol={}&interval=15m&limit=1000".format(symbol.upper())
             data = req.get(url).json()
+            # data = requests.Session().get(url).json()
             a=time.time()
 
-            if not data or not self._klines_up_to_date(data[-1][0]/1000):
+            if not data or not self._klines_up_to_date(data[-1][0]/1000) or len(data) < 500:
                 self.symbols.remove(symbol)
                 continue
             #step 2: refine raw klines
@@ -114,17 +157,17 @@ class TestBot(GenericTradingBot):
             #step 3: destructure refined klines
             self.DESTRUCTURED_KLINES[symbol] = self.destructure_klines(symbol, self.KLINES[symbol])
             c=time.time()
-
-            #step 4: generate indicator
-            # self.WATCH_LIST[symbol] = self.generate_indicators(self.DESTRUCTURED_KLINES[symbol])
-
-            
-            print("total: {:.2f}|download: {:.2f}|refine: {:.2f}|destructure: {:.2f}| {}/{} {}".format(time.time() - total, a-total, b-a, c-b, self.symbols.index(symbol)+1, len(self.symbols), symbol.replace("USDT", "/USDT")))
-
+     
+            # print("total: {:.2f}|download: {:.2f}|refine: {:.2f}|destructure: {:.2f}| {}/{} {}".format(time.time() - total, a-total, b-a, c-b, self.symbols.index(symbol)+1, len(self.symbols), symbol.replace("USDT", "/USDT")))
         ##START WEBSOCKET
         # INSIDE WEBSOCKET ON_MESSAGE WILL RUN INDICATORSs
         if not self.webSocketCrawler.running:
             self.webSocketCrawler.start()
+
+    def _merge_candle(self, candle, merging_candle):
+        merging_candle['high'] = candle['close'] if candle['close'] > merging_candle['high'] else merging_candle['high']
+        merging_candle['low'] = candle['close'] if candle['close'] < merging_candle['low'] else merging_candle['low']
+        merging_candle['close'] = candle['close']
 
     
     def destructure_klines(self, symbol, klines):
@@ -176,183 +219,7 @@ class TestBot(GenericTradingBot):
         return None
 
     
-    def scenario_01(self):
-        #update klines
-        self.oneTimeCrawler.klines_update()
-        self.indicators = {}
-
-
-
-
-        self.diamond = []
-        self.golden = []
-        self.silver = []
-        self.copper = []
-
-        #loop thru symbols to generate indicators and check buy signal
-        grand_total = time.time()
-        for symbol in self.oneTimeCrawler.get_klines():
-
-            total = time.time()
-            append_time = 0
-            ema10_time = 0
-            ema50_time = 0
-            ema200_time = 0
-            rsi14_time = 0
-            bbands_time = 0
-            volume_osc_time = 0
-            indicators_time= 0
-
-            
-            indicators = {}
-            candles = self.oneTimeCrawler.get_klines()[symbol]
-            # if not candles['15m']:
-            #     continue
-            for kline in candles:
-
-
-                
-                close = []
-                volume = []
-                
-                z = time.time()
-                for each in candles[kline]:
-                    close.append(each['close'])
-                    volume.append(each['volume'])
-                append_time += time.time() - z
-                
-                #generate indicators
-                ## notice: not persist into memory
-                self.indicator.set_data(close)
-
-                a = time.time()
-                ema10 = self.indicator.ema(10)
-                ema10_time = time.time() - a
-
-                
-                b = time.time()
-                ema50 = self.indicator.ema(20)
-                ema50_time = time.time() - b
-
-                c = time.time()
-                ema200 = self.indicator.ema(200)
-                ema200_time = time.time() - c
-
-                d = time.time()
-                rsi14 = self.indicator.rsi()
-                rsi14_time = time.time() - d
-
-
-                e = time.time()
-                bbands = self.indicator.bbands()
-                bbands_time = time.time() - e
-
-                self.indicator.set_data(volume)
-
-                f = time.time()
-                volume_osc = self.indicator.pvo(short=14, long=28)
-                volume_osc_time = time.time() - f
-                ##notce: persist into memory
-
-                g = time.time()
-                indicators[str(kline)] = {
-                    "ema10": ema10,
-                    "ema50": ema50,
-                    "ema200": ema200,
-                    "rsi14" : rsi14,
-                    "bbands": bbands,
-                    "volume_osc": volume_osc
-                    }
-                indicators_time += time.time() - g
-            # print(indicators)
-            self.indicators[symbol] = indicators
-
-            #check indicators if entry is good
-            can_buy_time = time.time()
-            can_buy = self.check_if_can_buy(symbol, candles, indicators)
-            can_buy_time = time.time() - can_buy_time
-
-
-            #if entry is good, create buy order
-            ##before creating order, check if this symbol is in position
-            check_position_time = time.time()
-            currently_in_position = symbol in self.orderManager.IN_POSITION if symbol in self.oneTimeCrawler.get_futures_symbols() else symbol in self.orderManager.IN_HOLDING
-            check_position_time = time.time() - check_position_time
-
-            total = time.time() - total
-
-            if currently_in_position:
-                self.orderManager.test_check_order_status(symbol)
-            if not currently_in_position and can_buy:
-                pass
-
-            # print(" total: {:.4f}|append: {:.4f}|ema10: {:.4f}|ema50: {:.4f}|ema200: {:.4f}|rsi14: {:.4f}|osc: {:.4f}|bband: {:.4f}|can_buy: {:.4f}|indicators: {:.4f}|indicators: {:.4f} {}".format(
-            #     total, append_time, ema10_time, ema50_time, ema200_time, rsi14_time, volume_osc_time, bbands_time, can_buy_time, indicators_time, check_position_time, symbol.replace("USDT", "/USDT")
-            # ))
-
-        print("diamond: ", self.diamond)
-        print("golden: ", self.golden)
-        print("silver: ", self.silver)
-        print("copper: ", self.copper)
-      
-
-        grand_total = time.time() - grand_total
-        print("grand total time: {:.4f}".format(grand_total))
-
-    def check_if_can_buy(self, symbol, candles, indicators):
-        UPPER_BOUND = 70
-        LOWER_BOUND = 30
-
-        green_4h = []
-        green_1h = []
-        green_15m = []
-
-
-        try:
-            candle = candles['4h'][-1]
-            if candle['close']/candle['open']*100 - 100 >= 5:
-                print("close/open: ", candle['close']/candle['open']*100 - 100)
-                self.copper.append(symbol)
-                green_4h.append(symbol)
-                candle = candles['1h'][-1]
-                if candle['close']/candle['open']*100 - 100 >= 5:
-                    print("close/open: ", candle['close']/candle['open']*100 - 100)
-                    self.silver.append(symbol)
-                    green_1h.append(symbol)
-                    candle = candles['15m'][-1]
-
-                    if candle['close']/candle['open']*100 - 100 >= 5:
-                        print("close/open: ", candle['close']/candle['open']*100 - 100)
-                        green_15m.append(symbol)
-                        self.golden.append(symbol)
-        except Exception as e:
-            print(e)
-            print("ERROR SYMBOL: " + symbol)
-
-        
-
-        return True
-
-    def trailing_stop(self, symbol, orders, low):
-
-        order = orders[0]
-        stoploss_order = orders[-1]
-
-        if float(self.orderManager.LAST_BUY_PRICE[symbol]) < low:
-
-            cancelled_order = self.client.cancel_order(symbol= symbol.upper(), orderId=str(stoploss_order['orderId']))
-            print("------DEBUG update_trailing_stop(): cancelled_order['status'], " + cancelled_order['status'])
-
-            stoploss_price = low * (1 - self.orderManager.stop_loss)
-            order_qty = order['executedQty']
-            new_stoploss_order = self.orderManager.create_stoploss_order(order['symbol'], order_qty, stoploss_price)
-
-            orders.append(new_stoploss_order)
-            self.orderManager.LAST_BUY_PRICE = low
-            return True
-
-        return False
-
+    
     
     def _scheduler(self, callback, interval):
         
@@ -396,7 +263,6 @@ class TestBot(GenericTradingBot):
         candle_1h = klines['1h'] if klines else []
         candle_4h = klines['4h'] if klines else []
         candle_1d = klines['1d'] if klines else []
-        candle_1w = klines['1w'] if klines else []
 
         if len(data) > 0:
             for i in data[-self.MAX_THRESH_HOLD:]:
@@ -417,47 +283,39 @@ class TestBot(GenericTradingBot):
                     }
                     
                 #15m
-                candle_15m.append(candle.copy())
+                candle_15m.append(dict.copy(candle))
                 while len(candle_15m) >= self.MAX_THRESH_HOLD:
                     del candle_15m[0]
             
                 #1h
                 if t.minute == 0:
-                    candle_1h.append(candle.copy())
+                    candle_1h.append(dict.copy(candle))
                 else:
                     if len(candle_1h) > 0:
                         self._build_merge_candle(candle, candle_1h[-1])
                 while len(candle_1h) >= self.MAX_THRESH_HOLD:
                     del candle_1h[0]
+
                 #4h
                 if t.minute == 0 and t.hour % 4 == 0:
-                    candle_4h.append(candle.copy())
+                    candle_4h.append(dict.copy(candle))
                 else:
                     if len(candle_4h) > 0:
                         self._build_merge_candle(candle, candle_4h[-1])
+
                 while len(candle_4h) >= self.MAX_THRESH_HOLD:
                     del candle_4h[0]
 
                 #1d
                 if t.minute == 0 and t.hour == 8:
-                    candle_1d.append(candle.copy())
+                    candle_1d.append(dict.copy(candle))
                 else:
                     if len(candle_1d) > 0:
                         self._build_merge_candle(candle, candle_1d[-1])
                 while len(candle_1d) >= self.MAX_THRESH_HOLD:
                     del candle_1d[0]
 
-                #1w
-                if t.minute == 0 and t.hour == 8 and (t.timestamp()/60/60/24) % 7 == 4:
-                    candle_1w.append(candle.copy())
-                else:
-                    if len(candle_1w) > 0:
-                        self._build_merge_candle(candle, candle_1w[-1])
-                
-                while len(candle_1w) >= self.MAX_THRESH_HOLD:
-                    del candle_1w[0]
-
-        return {"15m": candle_15m, "1h" : candle_1h, "4h" : candle_4h, "1d": candle_1d, "1w": candle_1w}
+        return {"15m": candle_15m, "1h" : candle_1h, "4h" : candle_4h, "1d": candle_1d}
     
     def _build_merge_candle(self, candle, merging_candle):
 

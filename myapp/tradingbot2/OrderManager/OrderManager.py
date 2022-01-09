@@ -1,5 +1,12 @@
 import pprint
 import time
+import os
+
+
+if __name__ == "__main__":
+    from Order import Order
+else:
+    from ..OrderManager.Order import Order
 from binance.enums import *
 
 class OrderManager:
@@ -17,72 +24,95 @@ class OrderManager:
         self.testMode = False
 
         self.stop_loss = 0.0
+        self.futures_balance = 0
+        self.balance = 0
 
-
-    def create_market_order(self, symbol, amount):
-        order = self.client.create_order(
-            symbol=symbol.upper(),
-            type='MARKET',
-            side='BUY',
-            newOrderRespType="RESULT",
-            quoteOrderQty = str(amount)
-        )
-        return order
-
-    def create_stoploss_order(self, symbol, amount, price):
-        order = self.client.create_order(
-            symbol=symbol.upper(),
-            type='STOP_LOSS_LIMIT',
-            side='SELL',
-            timeInForce = "GTC",
-            price = self._round(symbol, price),
-            stopPrice = self._round(symbol, price*1.001),
-            newOrderRespType="RESULT",
-            quantity = str(amount)
-        )
-        return order
+        self.file = __file__
     
-    def futures_create_market_order(self, symbol, qty):
-        order = self.client.futures_create_order(
-            symbol=symbol.upper(),
-            type='MARKET',
-            side='SELL',
-            newOrderRespType="RESULT",
-            quantity = str(qty)
-        )
-        pprint.pprint(order)
-        return order
+    def create_order(self, symbol, trade_size):
 
+        #check if symbol have pending order
+        if symbol in self.ORDERS.keys() and not self.ORDERS[symbol][-1].is_finished():
+            print(symbol + " have current pending order")
+            return None
+        #check if balance is sufficient
 
-    def futures_create_stop_order(self, symbol, price):
-        precision = self.get_baseAssetPrecision(symbol)
-        order = self.client.futures_create_order(
-            symbol=symbol.upper(),
-            type='STOP_LIMIT',
-            timeInForce='GTC',  # Can be changed - see link to API doc below
-            price= float(price, precision),  #float The price at which you wish to buy/sell, float
-            stopPrice = float(price*1.01, precision),
-            side='SELL',  # Direction ('BUY' / 'SELL'), string
-            quantity=0.001  # Number of coins you wish to buy / sell, float
-        )
-        return order
+        balance = self.get_balance()
+        if trade_size > balance or balance <= 11:
+            print(symbol + " balance is not sufficient: trade size {} - balance {}".format(trade_size, balance))
+            return None
         
-    def futures_create_stoploss_order(self, symbol, price, qty):
-        order = self.client.futures_create_order(
-            symbol=symbol.upper(),
-            type='STOP',
-            timeInForce='GTC',  # Can be changed - see link to API doc below
-            price= round(price*0.99,2),
-            stopPrice= price,  #price reach stopPrice will execute order at price
-            side='SELL',  # Direction ('BUY' / 'SELL'), string
-            quantity= str(qty)  # Number of coins you wish to buy / sell, string
-        )
-        pprint.pprint(order)
+        #create orders
+        order = Order(self.client, symbol)
+        order.create_order_market(trade_size)
+        order.create_order_stoploss()
+
+        try:
+            self.ORDERS[symbol].append(order)
+        except KeyError:
+            self.ORDERS[symbol] = [order]
+
         return order
 
+    def update_order(self, symbol, price):
+        if symbol not in self.ORDERS.keys():
+            ## there is no active order, no need to update
+            return False
+
+        if self.ORDERS[symbol][-1].met_stop_loss(price):
+            ## if orderr is active and has met stop loss..
+            print("%s stop loss met" % symbol)
+            self.order_to_file(self.ORDERS[symbol][-1])
+            return False
+
+        if self.ORDERS[symbol][-1].trailing_stop(price):
+            ## if orderr is active and has trailing stop successfully..
+            print("%s trailing stop" % symbol)
+            return True
+
+    
+    def futures_create_order(self, symbol, price):
+        #check if symbol have pending order
+        if symbol in self.FUTURES_ORDERS.keys() and self.FUTURES_ORDERS[symbol][-1].is_active():
+            return None
+
+        #check if balance is sufficient
+        futures_balance = self.futures_get_balance()
+        if (futures_balance <= 110):
+            print(symbol + " futures balance is not sufficient. Balance: " + futures_balance)
+            return None
+
+        #create futures orders
+        order = Order(self.client, symbol, True)
+        order.futures_create_order_market(price)
+        order.futures_create_order_stoploss()
+
+        try:
+            self.FUTURES_ORDERS[symbol].append(order)
+        except KeyError:
+            self.FUTURES_ORDERS[symbol] = [order]
+
+        return order
+
+    def futures_update_order(self, symbol, price):
+        if symbol not in self.FUTURES_ORDERS.keys():
+             ## there is no active order, no need to update
+            return False
+
+        if self.FUTURES_ORDERS[symbol][-1].futures_met_stop_loss(price):
+            print("%s stop loss met" % symbol)
+            self.futures_order_to_file(self.FUTURES_ORDERS[symbol][-1])
+            return False
+        if self.FUTURES_ORDERS[symbol][-1].futures_trailing_stop(price):
+            print("futures %s trailing stop" % symbol)
+            return True
+
+        print("===========")
+
+        
+                        
 
     def test_create_order(self, symbol, price, time):
-
         order = {
             "symbol": symbol.upper(),
             "orderId": 1,
@@ -95,7 +125,6 @@ class OrderManager:
         return order
     
     def test_create_stoploss_order(self, symbol, price, time):
-
         stoploss_order = {
             "symbol": symbol.upper(),
             "orderId": 1,
@@ -133,81 +162,53 @@ class OrderManager:
     def futures_set_leverage(self, symbol, leverage):
         self.client.futures_change_leverage(symbol=symbol.upper(), leverage=10)
 
-
-    def futures_get_price(self, symbol):
-        price = self.client.futures_symbol_ticker(symbol = symbol)['price']
-        return float(price)
-
-    def futures_get_all_orders(self):
-        return self.client.futures_get_all_orders()
-    
-    def futures_get_open_orders(self):
-        return self.client.futures_get_open_orders()
-
-    def futures_get_balance(self):
-        ##return usdt balance
-        balances = self.client.futures_account_balance(asset="USDT")
-        usdt = None
-
-        for each in balances:
-            if each['asset'] == "USDT":
-                usdt = each
-                break
-        
-        return float(usdt['balance'])
-
-    def get_precision(self, symbol):
-        #TODO: return precision of the base asset
-        symbol_info = self.get_symbol_info(symbol)
-        for i in symbol_info['filters']:
-            if i['filterType'] == "PRICE_FILTER":
-                price_precision = float(i['minPrice'])
-        print(price_precision, len(str(price_precision)) - 2)
-        return len(str(price_precision)) - 2
-
     def get_balance(self):
         ##return USDT balance
         #fetch details: {'asset': 'USDT', 'free': '11.73165240', 'locked': '0.00000000'}
         balance = self.client.get_asset_balance(asset='USDT')
         return float(balance["free"])
+    
+    def futures_get_balance(self):
+        ##return USDT balance
+        #fetch details: {'asset': 'USDT', 'free': '11.73165240', 'locked': '0.00000000'}
+        self.client.FUTURES_API_VERSION = 'v2'
+        balance = self.client.futures_account_balance(asset='USDT')
 
-    def get_quantity(self, price, amount):
-        return amount/price * self.leverage
-    
-    def _round(self, symbol, price):
-        symbol_info = self.client.get_symbol_info(symbol)
-        for i in symbol_info['filters']:
-            if i['filterType'] == "PRICE_FILTER":
-                minPrice = float(i['minPrice'])
+        for each in balance:
+            if each['asset'] == "USDT":
+                self.futures_balance = float(each['maxWithdrawAmount'])
+                self.client.FUTURES_API_VERSION = 'v1'
+                break 
+                    
+        return self.futures_balance
+
+    def order_to_file(self, order):
+        filename = self._create_file_name()
+        if not os.path.exists(os.path.dirname(filename)):
+            os.makedirs(os.path.dirname(filename))
+
+        with open(filename, "a+", encoding ="utf-8") as f:
+            f.write(str(order.ORDER_LOG)+"\n")
+
+    def futures_order_to_file(self, order):
+        filename = "../jsondata/orders/futures_order.txt"
+        filename = os.path.normpath(os.path.join(os.path.dirname(self.file), filename))
 
 
-        stopPrice = round(price, len(str(minPrice)) - 2)
-        print("minPrice: ", minPrice)
-        print("stopPrice: ", stopPrice)
-        stopPrice += minPrice
+        if not os.path.exists(os.path.dirname(filename)):
+            os.makedirs(os.path.dirname(filename))
 
-        return round(stopPrice, len(str(minPrice)) - 2)
+        with open(filename, "a+", encoding ="utf-8") as f:
+            f.write(str(order.ORDER_LOG)+"\n")
     
-    
-    def _add_to_memory(self, symbol, orders):
-        try:
-            orderId = str(len(self.ORDERS[symbol]) + 1)
-        except KeyError:
-            orderId = "1"
-            self.ORDERS[symbol] = {}
-        self.ORDERS[symbol][orderId] = orders
-    
-    def futures_add_to_memory(self, symbol, orders):
-        try:
-            orderId = str(len(self.FUTURES_ORDERS[symbol]) + 1)
-        except KeyError:
-            orderId = "1"
-            self.FUTURES_ORDERS[symbol] = {}
-        self.FUTURES_ORDERS[symbol][orderId] = orders
-    
+
+    def _create_file_name(self):
+        filename = "../jsondata/orders/order.txt"
+        filename = os.path.normpath(os.path.join(os.path.dirname(self.file), filename))
+        return filename
 
 if __name__ == "__main__":
-    from binance.enums import *
+
     from binance.client import Client
     from binance.exceptions import BinanceAPIException, BinanceOrderException
 
@@ -216,7 +217,9 @@ if __name__ == "__main__":
     orderManager = OrderManager(client)
 
     pprint.pprint(orderManager.futures_get_balance())
-    # orderManager.create_order("BNBUSDT", 11)
+    pprint.pprint(orderManager.get_balance())
+    orderManager.create_order("BNBUSDT", 11)
+    orderManager.create_order("BNBUSDT", 11)
     # pprint.pprint(orderManager.ORDERS)
 
 

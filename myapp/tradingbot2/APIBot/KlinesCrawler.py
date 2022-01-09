@@ -23,7 +23,8 @@ class KlinesCrawler():
 
 
         self.MAX_THRESH_HOLD = 1000
-        self.START_TIME = self._kline_get_endTime() - (15*60) * self.MAX_THRESH_HOLD #365 days ago in timestamp
+        # self.START_TIME = self._kline_get_endTime() - (15*60) * self.MAX_THRESH_HOLD #1000 klines ago  in timestamp
+        self.START_TIME = self._kline_get_endTime() - 365*24*60*60 ##365 days ago
         self.FUTURES_SYMBOLS = []
         self.SYMBOLS = []
         self.KLINES = {}
@@ -75,6 +76,7 @@ class KlinesCrawler():
                 try:
                     #read timestamp from memory
                     latest_klines = self.KLINES_MEMORY[symbol][-1]
+                    startTime = self._kline_get_timestamp(latest_klines)
                 except KeyError:
                     #read klines from storage
                     self.KLINES_MEMORY[symbol] = self._klines_from_file(symbol)
@@ -267,8 +269,12 @@ if __name__ == "__main__":
 
     a = KlinesCrawler(client)
     # a.klines_update()
-    
     scheduler = a._scheduler(a.klines_update, 15*60)
+    try:
+        while (True):
+            time.sleep(1)
+    except KeyboardInterrupt:
+        a.stop()
 
 
         

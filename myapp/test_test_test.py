@@ -11,7 +11,61 @@ class Test:
     def __init__(self, client):
         self.indicator = Indicator.Indicator()
         self.client = client
-        self.read_klines("BTCUSDT")
+        self.read_futures_orders()
+
+
+    def read_orders(self):
+        with open(r"C:\Users\teddi\Desktop\temp\tradingbot-2\myapp\tradingbot2\jsondata\orders\order.txt", "r") as f:
+            total_avenue = 0
+            
+            for line in f:
+                line = line.replace("'", '"')
+                line = line.split("\n")[0]
+                line = line.replace("True", "true")
+                line = line.replace("False", "false")
+                array = json.loads(line)
+                
+                # pprint.pprint(array[0])
+                # pprint.pprint(array[-1])
+                origOrder = array[0]
+                stoplossOrder = array[-1]
+
+                avgBuyPrice = round( float(origOrder['cummulativeQuoteQty'])/float(origOrder['executedQty']),8)
+                stoplossPrice = round( float(stoplossOrder['cummulativeQuoteQty'])/float(stoplossOrder['executedQty']),8)
+                avenue = (stoplossPrice - avgBuyPrice) * float(origOrder["cummulativeQuoteQty"])
+                
+                print("{:8} buy: {:10.2f}, sell: {:10.2f}, avenue: {:10.2f}".format(origOrder['symbol'], avgBuyPrice, stoplossPrice, avenue))
+                total_avenue += avenue
+
+            print("Total avenue", total_avenue)
+
+    def read_futures_orders(self):
+        with open(r"C:\Users\teddi\Desktop\temp\tradingbot-2\myapp\tradingbot2\jsondata\orders\futures_order.txt", "r") as f:
+            total_avenue = 0
+            count = 0
+            
+            for line in f:
+                line = line.replace("'", '"')
+                line = line.split("\n")[0]
+                line = line.replace("True", "true")
+                line = line.replace("False", "false")
+                array = json.loads(line)
+                
+                origOrder = array[0]
+                stoplossOrder = array[-1]
+
+                avgBuyPrice = float(origOrder['avgPrice'])
+                stoplossPrice = float(stoplossOrder['avgPrice'])
+                avenue = (stoplossPrice - avgBuyPrice) * float(origOrder["executedQty"])
+                
+                print("{:8} buy: {:10.4f}, sell: {:10.4f}, avenue: {:10.4f}".format(origOrder['symbol'], avgBuyPrice, stoplossPrice, avenue))
+    
+                total_avenue += avenue
+                count += 1
+
+            print("Total avenue", total_avenue)
+            print("total order: ", count)
+
 
 
     def read_klines(self, symbol):
